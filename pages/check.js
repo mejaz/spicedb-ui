@@ -14,10 +14,16 @@ const Check = () => {
         subjects: '',
         context: ''
     });
-    const [lookupForm, setLookupForm] = useState({
+    const [lookupSubjectsForm, setLookupSubjectsForm] = useState({
         resource: '',
         permission: '',
         subjectType: '',
+        context: ''
+    });
+    const [lookupResourcesForm, setLookupResourcesForm] = useState({
+        subject: '',
+        permission: '',
+        resourceType: '',
         context: ''
     });
     const [activeTab, setActiveTab] = useState('check');
@@ -158,8 +164,8 @@ const Check = () => {
         }
     };
 
-    const performLookup = async () => {
-        if (!lookupForm.resource || !lookupForm.permission || !lookupForm.subjectType) {
+    const performSubjectsLookup = async () => {
+        if (!lookupSubjectsForm.resource || !lookupSubjectsForm.permission || !lookupSubjectsForm.subjectType) {
             setError('Resource, permission, and subject type are required');
             return;
         }
@@ -169,7 +175,7 @@ const Check = () => {
         setResult(null);
 
         try {
-            const [resourceType, resourceId] = lookupForm.resource.split(':');
+            const [resourceType, resourceId] = lookupSubjectsForm.resource.split(':');
 
             if (!resourceType || !resourceId) {
                 throw new Error('Invalid format. Use type:id format for resource');
@@ -180,14 +186,14 @@ const Check = () => {
                     objectType: resourceType,
                     objectId: resourceId
                 },
-                permission: lookupForm.permission,
-                subjectObjectType: lookupForm.subjectType
+                permission: lookupSubjectsForm.permission,
+                subjectObjectType: lookupSubjectsForm.subjectType
             };
 
             // Add context if provided
-            if (lookupForm.context) {
+            if (lookupSubjectsForm.context) {
                 try {
-                    requestBody.context = JSON.parse(lookupForm.context);
+                    requestBody.context = JSON.parse(lookupSubjectsForm.context);
                 } catch (e) {
                     throw new Error('Invalid JSON in context field');
                 }
@@ -209,10 +215,76 @@ const Check = () => {
             const data = await response.json();
 
             setResult({
-                type: 'lookup',
+                type: 'lookup-subjects',
                 subjects: data.subjects || [],
                 looked_up_at: data.looked_up_at,
-                query: `${lookupForm.resource}#${lookupForm.permission} ← ${lookupForm.subjectType}:*`,
+                query: `${lookupSubjectsForm.resource}#${lookupSubjectsForm.permission} ← ${lookupSubjectsForm.subjectType}:*`,
+            });
+
+        } catch (err) {
+            setError(err.message || 'Failed to lookup subjects');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+      const performResourcesLookup = async () => {
+        if (!lookupResourcesForm.subject || !lookupResourcesForm.permission || !lookupResourcesForm.resourceType) {
+            setError('subject, permission, and resource type are required');
+            return;
+        }
+
+        setIsLoading(true);
+        setError('');
+        setResult(null);
+
+        try {
+            const [subjectType, subjectId] = lookupResourcesForm.subject.split(':');
+
+            if (!subjectType || !subjectId) {
+                throw new Error('Invalid format. Use type:id format for resource');
+            }
+
+            const requestBody = {
+                subject: {
+                    object: {
+                        objectType: subjectType,
+                        objectId: subjectId
+                    }
+                },
+                permission: lookupResourcesForm.permission,
+                resourceObjectType: lookupResourcesForm.resourceType
+            };
+
+            // Add context if provided
+            if (lookupResourcesForm.context) {
+                try {
+                    requestBody.context = JSON.parse(lookupResourcesForm.context);
+                } catch (e) {
+                    throw new Error('Invalid JSON in context field');
+                }
+            }
+
+            const response = await fetch('/api/spicedb/lookup-resources', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Lookup request failed');
+            }
+
+            const data = await response.json();
+
+            setResult({
+                type: 'lookup-resources',
+                resources: data.resources || [],
+                looked_up_at: data.looked_up_at,
+                query: `${lookupResourcesForm.resourceType}:*#${lookupResourcesForm.permission} ← ${lookupResourcesForm.subject}`,
             });
 
         } catch (err) {
@@ -314,14 +386,24 @@ const Check = () => {
                             Expand Permission
                         </button>
                         <button
-                            onClick={() => setActiveTab('lookup')}
+                            onClick={() => setActiveTab('lookup-subjects')}
                             className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                                activeTab === 'lookup'
+                                activeTab === 'lookup-subjects'
                                     ? 'border-blue-500 text-blue-600'
                                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                             }`}
                         >
                             Lookup Subjects
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('lookup-resources')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                activeTab === 'lookup-resources'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            Lookup Resources
                         </button>
                     </nav>
                 </div>
@@ -493,7 +575,7 @@ const Check = () => {
                 )}
 
                 {/* Lookup Subjects Tab */}
-                {activeTab === 'lookup' && (
+                {activeTab === 'lookup-subjects' && (
                     <div className="bg-white shadow rounded-lg">
                         <div className="px-4 py-5 sm:p-6">
                             <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Lookup Subjects</h3>
@@ -506,8 +588,8 @@ const Check = () => {
                                     <input
                                         type="text"
                                         placeholder="e.g., document:readme"
-                                        value={lookupForm.resource}
-                                        onChange={(e) => setLookupForm({...lookupForm, resource: e.target.value})}
+                                        value={lookupSubjectsForm.resource}
+                                        onChange={(e) => setLookupSubjectsForm({...lookupSubjectsForm, resource: e.target.value})}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                                     />
                                 </div>
@@ -519,8 +601,8 @@ const Check = () => {
                                     <input
                                         type="text"
                                         placeholder="e.g., view, edit, delete"
-                                        value={lookupForm.permission}
-                                        onChange={(e) => setLookupForm({...lookupForm, permission: e.target.value})}
+                                        value={lookupSubjectsForm.permission}
+                                        onChange={(e) => setLookupSubjectsForm({...lookupSubjectsForm, permission: e.target.value})}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                                     />
                                 </div>
@@ -532,8 +614,8 @@ const Check = () => {
                                     <input
                                         type="text"
                                         placeholder="e.g., user, organization"
-                                        value={lookupForm.subjectType}
-                                        onChange={(e) => setLookupForm({...lookupForm, subjectType: e.target.value})}
+                                        value={lookupSubjectsForm.subjectType}
+                                        onChange={(e) => setLookupSubjectsForm({...lookupSubjectsForm, subjectType: e.target.value})}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                                     />
                                 </div>
@@ -545,8 +627,8 @@ const Check = () => {
                                     <input
                                         type="text"
                                         placeholder='e.g., {"ip": "192.168.1.1"}'
-                                        value={lookupForm.context}
-                                        onChange={(e) => setLookupForm({...lookupForm, context: e.target.value})}
+                                        value={lookupSubjectsForm.context}
+                                        onChange={(e) => setLookupSubjectsForm({...lookupSubjectsForm, context: e.target.value})}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                                     />
                                 </div>
@@ -554,7 +636,7 @@ const Check = () => {
 
                             <div className="mt-4">
                                 <button
-                                    onClick={performLookup}
+                                    onClick={performSubjectsLookup}
                                     disabled={isLoading}
                                     className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50"
                                 >
@@ -567,6 +649,89 @@ const Check = () => {
                                         <>
                                             <span className="mr-2">🔍</span>
                                             Lookup Subjects
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Lookup Subjects Tab */}
+                {activeTab === 'lookup-resources' && (
+                    <div className="bg-white shadow rounded-lg">
+                        <div className="px-4 py-5 sm:p-6">
+                            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Lookup Resources</h3>
+
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Subject (type:id)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g., document:readme"
+                                        value={lookupResourcesForm.subject}
+                                        onChange={(e) => setLookupResourcesForm({...lookupResourcesForm, subject: e.target.value})}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Permission
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g., view, edit, delete"
+                                        value={lookupResourcesForm.permission}
+                                        onChange={(e) => setLookupResourcesForm({...lookupResourcesForm, permission: e.target.value})}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Resource Type
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g., user, organization"
+                                        value={lookupResourcesForm.resourceType}
+                                        onChange={(e) => setLookupResourcesForm({...lookupResourcesForm, resourceType: e.target.value})}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Context (JSON, optional)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder='e.g., {"ip": "192.168.1.1"}'
+                                        value={lookupResourcesForm.context}
+                                        onChange={(e) => setLookupResourcesForm({...lookupResourcesForm, context: e.target.value})}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="mt-4">
+                                <button
+                                    onClick={performResourcesLookup}
+                                    disabled={isLoading}
+                                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50"
+                                >
+                                    {isLoading ? (
+                                        <>
+                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                            Looking up...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="mr-2">🔍</span>
+                                            Lookup Resources
                                         </>
                                     )}
                                 </button>
@@ -604,7 +769,7 @@ const Check = () => {
                                 </div>
                             )}
 
-                            {result.type === 'lookup' && (
+                            {result.type === 'lookup-subjects' && (
                                 <div>
                                     <div className="mb-4">
                                         <code className="text-sm bg-gray-100 px-3 py-2 rounded">{result.query}</code>
@@ -626,6 +791,33 @@ const Check = () => {
                                             </div>
                                         ) : (
                                             <p className="text-gray-500 italic">No subjects found</p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {result.type === 'lookup-resources' && (
+                                <div>
+                                    <div className="mb-4">
+                                        <code className="text-sm bg-gray-100 px-3 py-2 rounded">{result.query}</code>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h4 className="font-medium">Found Resources ({result.resources.length}):</h4>
+                                        {result.resources.length > 0 ? (
+                                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                                {result.resources.map((resource, idx) => (
+                                                    <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
+                                                        <code className="text-sm">
+                                                            {resource.resourceObjectId}
+                                                        </code>
+                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${getPermissionshipColor(resource.permissionship)}`}>
+                              {resource.permissionship.replace('PERMISSIONSHIP_', '')}
+                            </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-gray-500 italic">No resources found</p>
                                         )}
                                     </div>
                                 </div>
