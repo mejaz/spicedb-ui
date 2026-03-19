@@ -83,12 +83,7 @@ A modern web interface for managing SpiceDB authorization systems. Built with Ne
 
 ### Run with Docker
 
-1. **Build the Docker image**
-   ```bash
-   docker build -t spicedb-ui .
-   ```
-
-2. **Configure environment variables**
+1. **Configure environment variables**
 
    Create a `.env` file in the project root:
    ```bash
@@ -99,12 +94,12 @@ A modern web interface for managing SpiceDB authorization systems. Built with Ne
 
    > **Note**: Use `host.docker.internal` to connect to services running on your host machine from within the Docker container.
 
-3. **Run the container**
+2. **Run the container**
    ```bash
-   docker run --env-file .env -p 3000:3000 spicedb-ui
+   docker run --env-file .env -p 3000:3000 ghcr.io/mejaz/spicedb-ui
    ```
 
-4. **Access the application**
+3. **Access the application**
 
    Open your browser and navigate to `http://localhost:3000`
 
@@ -119,7 +114,7 @@ For easier management, you can also use Docker Compose:
 version: '3.8'
 services:
   spicedb-ui:
-    build: .
+    image: ghcr.io/mejaz/spicedb-ui:latest
     ports:
       - "3000:3000"
     environment:
@@ -129,7 +124,7 @@ services:
 
 Then run:
 ```bash
-docker-compose up --build
+docker-compose up
 ```
 
 ## Configuration
