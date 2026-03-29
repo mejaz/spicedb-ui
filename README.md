@@ -52,6 +52,24 @@ A modern web interface for managing SpiceDB authorization systems. Built with Ne
 
 ## Quick Start
 
+### Use pre-built images
+
+The project creates automatic Docker builds on every new commit to the main branch.
+
+```yaml
+# docker-compose.yml
+services:
+  spicedb-ui:
+    image: ghcr.io/mejaz/spicedb-ui:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - SPICEDB_URL=http://host.docker.internal:8443
+      - SPICEDB_TOKEN=your-token-here
+```
+
+### Building the Image during for development
+
 1. **Clone and install**
    ```bash
    git clone https://github.com/mejaz/spicedb-ui.git
@@ -116,7 +134,6 @@ For easier management, you can also use Docker Compose:
 
 ```yaml
 # docker-compose.yml
-version: '3.8'
 services:
   spicedb-ui:
     build: .
