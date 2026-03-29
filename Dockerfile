@@ -1,5 +1,5 @@
 # Use an official Node.js runtime as a parent image
-FROM node:25-alpine
+FROM node:24-alpine
 
 # Set working directory
 WORKDIR /app

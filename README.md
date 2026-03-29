@@ -52,6 +52,24 @@ A modern web interface for managing SpiceDB authorization systems. Built with Ne
 
 ## Quick Start
 
+### Use pre-built images
+
+The project creates automatic Docker builds on every new commit to the main branch.
+
+```yaml
+# docker-compose.yml
+services:
+  spicedb-ui:
+    image: ghcr.io/mejaz/spicedb-ui:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - SPICEDB_URL=http://host.docker.internal:8443
+      - SPICEDB_TOKEN=your-token-here
+```
+
+### Building the Image during for development
+
 1. **Clone and install**
    ```bash
    git clone https://github.com/mejaz/spicedb-ui.git
@@ -83,7 +101,12 @@ A modern web interface for managing SpiceDB authorization systems. Built with Ne
 
 ### Run with Docker
 
-1. **Configure environment variables**
+1. **Build the Docker image**
+   ```bash
+   docker build -t spicedb-ui .
+   ```
+
+2. **Configure environment variables**
 
    Create a `.env` file in the project root:
    ```bash
@@ -94,12 +117,12 @@ A modern web interface for managing SpiceDB authorization systems. Built with Ne
 
    > **Note**: Use `host.docker.internal` to connect to services running on your host machine from within the Docker container.
 
-2. **Run the container**
+3. **Run the container**
    ```bash
-   docker run --env-file .env -p 3000:3000 ghcr.io/mejaz/spicedb-ui
+   docker run --env-file .env -p 3000:3000 spicedb-ui
    ```
 
-3. **Access the application**
+4. **Access the application**
 
    Open your browser and navigate to `http://localhost:3000`
 
@@ -111,10 +134,9 @@ For easier management, you can also use Docker Compose:
 
 ```yaml
 # docker-compose.yml
-version: '3.8'
 services:
   spicedb-ui:
-    image: ghcr.io/mejaz/spicedb-ui:latest
+    build: .
     ports:
       - "3000:3000"
     environment:
@@ -124,7 +146,7 @@ services:
 
 Then run:
 ```bash
-docker-compose up
+docker-compose up --build
 ```
 
 ## Configuration
