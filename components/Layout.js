@@ -1,113 +1,83 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { useUiConfig } from '../lib/use-ui-config';
 
-const Layout = ({ children }) => {
-    const [sidebarOpen, setSidebarOpen] = useState(true);
-    const router = useRouter();
+const navigation = [
+  { name: 'Dashboard', href: '/', icon: 'D' },
+  { name: 'Schema', href: '/schema', icon: 'S' },
+  { name: 'Relationships', href: '/relationships', icon: 'R' },
+  { name: 'Authorization', href: '/check', icon: 'A' },
+];
 
-    const navigation = [
-        { name: 'Dashboard', href: '/', icon: '📊' },
-        { name: 'Schema', href: '/schema', icon: '🏗️' },
-        { name: 'Relationships', href: '/relationships', icon: '🔗' },
-        { name: 'Permissions', href: '/permissions', icon: '🔐' },
-        { name: 'Check', href: '/check', icon: '✅' },
-    ];
+export default function Layout({ children }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [dark, setDark] = useState(false);
+  const router = useRouter();
+  const config = useUiConfig();
 
-    const isActive = (href) => {
-        if (href === '/') {
-            return router.pathname === '/';
-        }
-        return router.pathname.startsWith(href);
-    };
+  useEffect(() => {
+    const stored = localStorage.getItem('spicedb-ui-theme');
+    const initial = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    setDark(initial);
+  }, []);
 
-    return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Sidebar */}
-            <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-200 ease-in-out lg:translate-x-0`}>
-                <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
-                    <div className="flex items-center space-x-2">
-                        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                            <span className="text-white font-bold text-sm">S</span>
-                        </div>
-                        <span className="text-xl font-semibold text-gray-900">SpiceDB UI</span>
-                    </div>
-                    <button
-                        onClick={() => setSidebarOpen(!sidebarOpen)}
-                        className="lg:hidden p-1 rounded-md text-gray-400 hover:text-gray-600"
-                    >
-                        <span className="sr-only">Close sidebar</span>
-                        ✕
-                    </button>
-                </div>
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark);
+    localStorage.setItem('spicedb-ui-theme', dark ? 'dark' : 'light');
+  }, [dark]);
 
-                <nav className="mt-6">
-                    <div className="px-3">
-                        {navigation.map((item) => (
-                            <Link
-                                key={item.name}
-                                href={item.href}
-                                className={`group flex items-center px-3 py-2 text-sm font-medium rounded-md mb-1 ${
-                                    isActive(item.href)
-                                        ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-700'
-                                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                                }`}
-                            >
-                                <span className="mr-3 text-lg">{item.icon}</span>
-                                {item.name}
-                            </Link>
-                        ))}
-                    </div>
-                </nav>
-            </div>
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [router.asPath]);
 
-            {/* Main content */}
-            <div className={`${sidebarOpen ? 'lg:pl-64' : ''} transition-all duration-200`}>
-                {/* Top bar */}
-                <div className="bg-white shadow-sm border-b border-gray-200">
-                    <div className="px-4 sm:px-6 lg:px-8">
-                        <div className="flex justify-between h-16">
-                            <div className="flex items-center">
-                                <button
-                                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                                    className="lg:hidden p-2 rounded-md text-gray-400 hover:text-gray-600"
-                                >
-                                    <span className="sr-only">Open sidebar</span>
-                                    ☰
-                                </button>
-                                <h1 className="ml-4 lg:ml-0 text-2xl font-semibold text-gray-900">
-                                    {navigation.find(item => isActive(item.href))?.name || 'Dashboard'}
-                                </h1>
-                            </div>
-                            <div className="flex items-center space-x-4">
-                                <button className="p-2 text-gray-400 hover:text-gray-600 rounded-md">
-                                    <span className="sr-only">Settings</span>
-                                    Admin
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+  const active = (href) => href === '/' ? router.pathname === '/' : router.pathname.startsWith(href);
+  const title = navigation.find((item) => active(item.href))?.name || 'SpiceDB UI';
 
-                {/* Page content */}
-                <main className="py-8">
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                        {children}
-                    </div>
-                </main>
-            </div>
-
-            {/* Mobile sidebar overlay */}
-            {sidebarOpen && (
-                <div
-                    className="fixed inset-0 z-40 lg:hidden"
-                    onClick={() => setSidebarOpen(false)}
-                >
-                    <div className="absolute inset-0 bg-gray-600 opacity-75"></div>
-                </div>
-            )}
+  return (
+    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:z-[100] focus:bg-white focus:p-3">Skip to content</a>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 transform border-r border-gray-200 bg-white transition-transform dark:border-gray-800 dark:bg-gray-900 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`} aria-label="Primary navigation">
+        <div className="flex h-16 items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800">
+          <Link href="/" className="flex items-center gap-3 font-semibold">
+            <span aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white">S</span>
+            <span>SpiceDB UI</span>
+          </Link>
+          <button type="button" onClick={() => setSidebarOpen(false)} className="rounded p-2 lg:hidden" aria-label="Close navigation">✕</button>
         </div>
-    );
-};
+        <nav className="space-y-1 p-3">
+          {navigation.map((item) => (
+            <Link key={item.href} href={item.href} aria-current={active(item.href) ? 'page' : undefined}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${active(item.href) ? 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-200' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+              <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded bg-gray-100 text-xs dark:bg-gray-800">{item.icon}</span>
+              {item.name}
+            </Link>
+          ))}
+        </nav>
+      </aside>
 
-export default Layout;
+      <div className="lg:pl-64">
+        <header className="sticky top-0 z-30 border-b border-gray-200 bg-white/95 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+          <div className="flex min-h-16 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => setSidebarOpen(true)} className="rounded p-2 lg:hidden" aria-label="Open navigation">☰</button>
+              <h1 className="text-xl font-semibold">{title}</h1>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+              <span className={`rounded-full px-2.5 py-1 font-semibold uppercase ${config.environment === 'production' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200'}`}>{config.environment}</span>
+              {config.readOnly && <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-800">Read only</span>}
+              <span className="hidden text-gray-500 sm:inline dark:text-gray-400">{config.user} · {config.role}</span>
+              <button type="button" onClick={() => setDark((value) => !value)} className="rounded-lg border border-gray-300 px-2.5 py-1.5 dark:border-gray-700" aria-label={`Use ${dark ? 'light' : 'dark'} theme`}>{dark ? 'Light' : 'Dark'}</button>
+            </div>
+          </div>
+        </header>
+        {config.environment === 'production' && !config.readOnly && (
+          <div role="alert" className="border-b border-red-300 bg-red-50 px-4 py-2 text-center text-sm font-semibold text-red-800">Production writes are enabled. Verify every change before confirming.</div>
+        )}
+        <main id="main-content" className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">{children}</main>
+      </div>
+
+      {sidebarOpen && <button type="button" className="fixed inset-0 z-40 bg-gray-900/70 lg:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close navigation overlay" />}
+    </div>
+  );
+}

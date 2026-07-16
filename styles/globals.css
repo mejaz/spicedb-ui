@@ -1,222 +1,28 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
+
+html { scroll-behavior: smooth; }
+body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
+button, select { cursor: pointer; }
+button:disabled, select:disabled { cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-/* Dark mode styles for better readability */
-@media (prefers-color-scheme: dark) {
-  /* Main layout backgrounds */
-  .bg-gray-50 {
-    background-color: #111827 !important;
-  }
-  
-  .bg-white {
-    background-color: #1f2937 !important;
-  }
-  
-  /* Text colors */
-  .text-gray-900 {
-    color: #f9fafb !important;
-  }
-  
-  .text-gray-600 {
-    color: #d1d5db !important;
-  }
-  
-  .text-gray-500 {
-    color: #9ca3af !important;
-  }
-  
-  .text-gray-400 {
-    color: #6b7280 !important;
-  }
-  
-  .text-gray-700 {
-    color: #e5e7eb !important;
-  }
-  
-  .text-gray-800 {
-    color: #f3f4f6 !important;
-  }
-  
-  /* Border colors */
-  .border-gray-200 {
-    border-color: #374151 !important;
-  }
-  
-  .border-gray-300 {
-    border-color: #4b5563 !important;
-  }
-  
-  /* Hover states */
-  .hover\:bg-gray-50:hover {
-    background-color: #374151 !important;
-  }
-  
-  .hover\:text-gray-900:hover {
-    color: #f9fafb !important;
-  }
-  
-  .hover\:text-gray-600:hover {
-    color: #d1d5db !important;
-  }
-  
-  /* Active/selected states */
-  .bg-blue-50 {
-    background-color: #1e3a8a !important;
-  }
-  
-  .text-blue-700 {
-    color: #93c5fd !important;
-  }
-  
-  .text-blue-600 {
-    color: #60a5fa !important;
-  }
-  
-  .bg-green-50 {
-    background-color: #065f46 !important;
-  }
-  
-  .bg-red-50 {
-    background-color: #7f1d1d !important;
-  }
-  
-  .bg-yellow-50 {
-    background-color: #78350f !important;
-  }
-  
-  .bg-purple-50 {
-    background-color: #581c87 !important;
-  }
-  
-  /* Delete button and red text */
-  .text-red-600 {
-    color: #f87171 !important;
-  }
-  
-  .hover\:text-red-900:hover {
-    color: #fca5a5 !important;
-  }
-  
-  /* Chip/badge colors for better contrast */
-  .bg-blue-100 {
-    background-color: #1e40af !important;
-  }
-  
-  .text-blue-800 {
-    color: #dbeafe !important;
-  }
-  
-  .bg-green-100 {
-    background-color: #166534 !important;
-  }
-  
-  .text-green-800 {
-    color: #dcfce7 !important;
-  }
-  
-  .bg-purple-100 {
-    background-color: #7c3aed !important;
-  }
-  
-  .text-purple-800 {
-    color: #e9d5ff !important;
-  }
-  
-  .bg-red-100 {
-    background-color: #dc2626 !important;
-  }
-  
-  .text-red-800 {
-    color: #fecaca !important;
-  }
-  
-  .bg-yellow-100 {
-    background-color: #d97706 !important;
-  }
-  
-  .text-yellow-800 {
-    color: #fef3c7 !important;
-  }
-  
-  .bg-green-200 {
-    background-color: #059669 !important;
-  }
-  
-  .text-green-700 {
-    color: #d1fae5 !important;
-  }
-  
-  /* Table backgrounds */
-  .bg-gray-50 {
-    background-color: #111827 !important;
-  }
-  
-  /* Shadow adjustments for dark mode */
-  .shadow,
-  .shadow-sm,
-  .shadow-lg {
-    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.5), 0 1px 2px 0 rgba(0, 0, 0, 0.3) !important;
-  }
-
-  /* Input and textarea dark mode styles */
-  input[type="text"],
-  textarea,
-  select {
-    background-color: #1f2937 !important;
-    color: #f9fafb !important;
-    border-color: #4b5563 !important;
-  }
-
-  input[type="text"]:focus,
-  textarea:focus,
-  select:focus {
-    background-color: #1f2937 !important;
-    color: #f9fafb !important;
-    border-color: #3b82f6 !important;
-    box-shadow: 0 0 0 1px #3b82f6 !important;
-  }
-
-  input[type="text"]::placeholder,
-  textarea::placeholder {
-    color: #9ca3af !important;
-  }
-  
-  /* Code blocks and inline code */
-  code {
-    background-color: #374151 !important;
-    color: #f9fafb !important;
-  }
-  
-  .bg-gray-100 {
-    background-color: #374151 !important;
-  }
-  
-  pre {
-    background-color: #1f2937 !important;
-    color: #f9fafb !important;
-  }
+@layer components {
+  .card { @apply rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900; }
+  .label { @apply mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300; }
+  .input { @apply w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100; }
+  .btn-primary { @apply inline-flex min-h-10 items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:ring-offset-gray-950; }
+  .btn-secondary { @apply inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800; }
+  .btn-small { @apply inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200; }
+  .btn-danger { @apply inline-flex min-h-10 items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50; }
+  .btn-danger-small { @apply inline-flex items-center justify-center rounded-md px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 dark:text-red-300 dark:hover:bg-red-950; }
+  .alert-error { @apply rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200; }
+  .alert-success { @apply rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200; }
+  .alert-warning { @apply rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200; }
 }

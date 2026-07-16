@@ -1,485 +1,224 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
+import Modal from '../components/Modal';
+import { useUiConfig } from '../lib/use-ui-config';
 
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const PAGE_SIZE = 10;
+const emptyFilters = { resourceId: '', relation: '', subjectType: '', subjectId: '', subjectRelation: '' };
+const emptyDraft = { resourceType: '', resourceId: '', relation: '', subjectType: '', subjectId: '', subjectRelation: '', caveatName: '', caveatContext: '', operation: 'TOUCH' };
 
-const Relationships = () => {
-    const [resources, setResources] = useState([]);
-    const [relationships, setRelationships] = useState([]);
-    const [filteredRelationships, setFilteredRelationships] = useState([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [showAddModal, setShowAddModal] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [filterNamespace, setFilterNamespace] = useState('all');
-    const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(10);
-    const [newRelationship, setNewRelationship] = useState({
-        resource: '',
-        relation: '',
-        subject: ''
+export default function Relationships() {
+  const config = useUiConfig();
+  const [resourceTypes, setResourceTypes] = useState([]);
+  const [resourceType, setResourceType] = useState('');
+  const [filters, setFilters] = useState(emptyFilters);
+  const [appliedFilters, setAppliedFilters] = useState(emptyFilters);
+  const [relationships, setRelationships] = useState([]);
+  const [cursor, setCursor] = useState(null);
+  const [previousCursors, setPreviousCursors] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [addOpen, setAddOpen] = useState(false);
+  const [draft, setDraft] = useState(emptyDraft);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+
+  useEffect(() => {
+    fetch('/api/spicedb/resources')
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message);
+        setResourceTypes(data.resourceTypes || []);
+        const first = data.resourceTypes?.[0]?.name || '';
+        setResourceType(first);
+        setDraft((current) => ({ ...current, resourceType: first }));
+      })
+      .catch((failure) => { setError(failure.message || 'Unable to load schema'); setLoading(false); });
+  }, []);
+
+  const load = useCallback(async () => {
+    if (!resourceType) return;
+    setLoading(true);
+    setError('');
+    const query = new URLSearchParams({ resource_type: resourceType, page_size: String(PAGE_SIZE) });
+    if (cursor) query.set('cursor', cursor);
+    Object.entries(appliedFilters).forEach(([key, value]) => {
+      if (value) query.set(toQueryKey(key), value);
     });
-    const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
+    try {
+      const response = await fetch(`/api/spicedb/relationships?${query}`, { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Unable to load relationships');
+      setRelationships(data.relationships || []);
+      setNextCursor(data.nextCursor || null);
+    } catch (failure) {
+      setError(failure.message || 'Unable to load relationships');
+      setRelationships([]);
+      setNextCursor(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [resourceType, cursor, appliedFilters]);
 
-    useEffect(() => {
-        loadResources();
-        loadRelationships();
-    }, []);
+  useEffect(() => { load(); }, [load]);
 
-    useEffect(() => {
-        filterRelationships();
-    }, [relationships, searchTerm, filterNamespace]);
+  const selectedDefinition = useMemo(() => resourceTypes.find((item) => item.name === draft.resourceType), [resourceTypes, draft.resourceType]);
+  const canWrite = !config.readOnly && ['operator', 'admin'].includes(config.role);
+  const tenantWarning = crossTenantWarning(draft.resourceId, draft.subjectId, config.tenantDelimiter);
 
-    const totalPages = Math.max(1, Math.ceil(filteredRelationships.length / pageSize));
-    const activePage = Math.min(currentPage, totalPages);
-    const pageStart = (activePage - 1) * pageSize;
-    const paginatedRelationships = filteredRelationships.slice(pageStart, pageStart + pageSize);
+  const applySearch = (event) => {
+    event.preventDefault();
+    setAppliedFilters(filters);
+    setCursor(null);
+    setPreviousCursors([]);
+    setPage(1);
+  };
 
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [searchTerm, filterNamespace, pageSize]);
+  const clearSearch = () => {
+    setFilters(emptyFilters);
+    setAppliedFilters(emptyFilters);
+    setCursor(null);
+    setPreviousCursors([]);
+    setPage(1);
+  };
 
-    useEffect(() => {
-        if (currentPage > totalPages) {
-            setCurrentPage(totalPages);
-        }
-    }, [currentPage, totalPages]);
+  const nextPage = () => {
+    if (!nextCursor) return;
+    setPreviousCursors((values) => [...values, cursor]);
+    setCursor(nextCursor);
+    setPage((value) => value + 1);
+  };
 
-    const loadResources = async () => {
-        setIsLoading(true);
-        setError('');
-        try {
-            const response = await fetch('/api/spicedb/resources');
+  const previousPage = () => {
+    if (!previousCursors.length) return;
+    const values = [...previousCursors];
+    setCursor(values.pop() || null);
+    setPreviousCursors(values);
+    setPage((value) => Math.max(1, value - 1));
+  };
 
-            if (response.ok) {
-                const data = await response.json();
-                setResources(data.resourceTypes.map((resourceType) => resourceType.name) || []);
-            } else {
-                const errorData = await response.json();
-                setError(`Failed to load resources: ${errorData.message}`);
-            }
-        } catch (err) {
-            setError(`Connection error: ${err.message}`);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  const createRelationship = async (event) => {
+    event.preventDefault();
+    setError('');
+    try {
+      const relationship = relationshipFromDraft(draft);
+      const response = await fetch('/api/spicedb/relationships', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ relationship, operation: draft.operation }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Relationship write failed');
+      setAddOpen(false);
+      setNotice('Relationship saved');
+      setDraft({ ...emptyDraft, resourceType });
+      setCursor(null); setPreviousCursors([]); setPage(1);
+      await load();
+    } catch (failure) {
+      setError(failure.message || 'Relationship write failed');
+    }
+  };
 
-    const loadRelationships = async () => {
-        setIsLoading(true);
-        setError('');
-        try {
-            const response = await fetch('/api/spicedb/relationships');
+  const deleteRelationship = async () => {
+    if (!deleteTarget || deleteConfirmation !== deleteTarget.tuple) return;
+    setError('');
+    try {
+      const response = await fetch('/api/spicedb/relationships', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ relationship: withoutTuple(deleteTarget), confirmation: deleteConfirmation }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Relationship deletion failed');
+      setDeleteTarget(null); setDeleteConfirmation(''); setNotice('Exact relationship deleted');
+      await load();
+    } catch (failure) {
+      setError(failure.message || 'Relationship deletion failed');
+    }
+  };
 
-            if (response.ok) {
-                const data = await response.json();
-                setRelationships(data.relationships || []);
-            } else {
-                const errorData = await response.json();
-                setError(`Failed to load relationships: ${errorData.message}`);
-            }
-        } catch (err) {
-            setError(`Connection error: ${err.message}`);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  return (
+    <Layout>
+      <div className="space-y-6">
+        <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div><h2 className="text-2xl font-bold">Relationships</h2><p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Cursor-based browsing with exact SpiceDB filters.</p></div>
+          <button type="button" className="btn-primary" disabled={!canWrite} onClick={() => setAddOpen(true)}>{canWrite ? 'Add relationship' : 'Writes disabled'}</button>
+        </section>
 
-    const filterRelationships = () => {
-        let filtered = relationships;
+        {error && <div role="alert" className="alert-error">{error}</div>}
+        {notice && <div role="status" className="alert-success">{notice}</div>}
 
-        if (searchTerm) {
-            filtered = filtered.filter(rel =>
-                rel.resource.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                rel.resource.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                rel.relation.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                rel.subject.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                rel.subject.id.toLowerCase().includes(searchTerm.toLowerCase())
-            );
-        }
+        <form onSubmit={applySearch} className="card grid gap-4 p-5 md:grid-cols-3">
+          <Field label="Resource type"><select value={resourceType} onChange={(event) => { setResourceType(event.target.value); setCursor(null); setPreviousCursors([]); setPage(1); }} className="input">{resourceTypes.map((item) => <option key={item.name}>{item.name}</option>)}</select></Field>
+          <Field label="Resource ID"><input className="input" value={filters.resourceId} onChange={(event) => setFilters({ ...filters, resourceId: event.target.value })} placeholder="Exact ID" /></Field>
+          <Field label="Relation"><input className="input" value={filters.relation} onChange={(event) => setFilters({ ...filters, relation: event.target.value })} placeholder="Exact relation" /></Field>
+          <Field label="Subject type"><input className="input" value={filters.subjectType} onChange={(event) => setFilters({ ...filters, subjectType: event.target.value })} placeholder="e.g. user" /></Field>
+          <Field label="Subject ID"><input className="input" value={filters.subjectId} onChange={(event) => setFilters({ ...filters, subjectId: event.target.value })} placeholder="Exact ID" /></Field>
+          <Field label="Subject relation"><input className="input" value={filters.subjectRelation} onChange={(event) => setFilters({ ...filters, subjectRelation: event.target.value })} placeholder="e.g. member" /></Field>
+          <div className="flex gap-3 md:col-span-3"><button className="btn-primary" type="submit">Apply filters</button><button className="btn-secondary" type="button" onClick={clearSearch}>Clear</button></div>
+        </form>
 
-        if (filterNamespace !== 'all') {
-            filtered = filtered.filter(rel => rel.resource.type === filterNamespace);
-        }
+        <section className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500 dark:bg-gray-800 dark:text-gray-400"><tr><th className="px-5 py-3">Relationship tuple</th><th className="px-5 py-3 text-right">Actions</th></tr></thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {!loading && relationships.map((relationship) => (
+                  <tr key={relationship.tuple} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                    <td className="px-5 py-4"><code className="break-all text-sm">{relationship.tuple}</code>{relationship.optionalCaveat && <pre className="mt-2 max-w-2xl overflow-auto text-xs text-gray-500">{JSON.stringify(relationship.optionalCaveat, null, 2)}</pre>}</td>
+                    <td className="px-5 py-4 text-right"><div className="flex justify-end gap-2"><button type="button" className="btn-small" onClick={() => navigator.clipboard.writeText(relationship.tuple)}>Copy</button>{canWrite && <button type="button" className="btn-danger-small" onClick={() => { setDeleteTarget(relationship); setDeleteConfirmation(''); }}>Delete</button>}</div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {loading && <div className="p-10 text-center text-gray-500" role="status">Loading relationships…</div>}
+          {!loading && !relationships.length && <div className="p-10 text-center text-gray-500">No relationships matched these exact filters.</div>}
+          <footer className="flex items-center justify-between border-t border-gray-200 px-5 py-4 text-sm dark:border-gray-700">
+            <span>Page {page} · up to {PAGE_SIZE} rows</span>
+            <div className="flex gap-2"><button className="btn-secondary" type="button" disabled={!previousCursors.length || loading} onClick={previousPage}>Previous</button><button className="btn-secondary" type="button" disabled={!nextCursor || loading} onClick={nextPage}>Next</button></div>
+          </footer>
+        </section>
+      </div>
 
-        setFilteredRelationships(filtered);
-    };
+      <Modal open={addOpen} title="Add relationship" onClose={() => setAddOpen(false)} footer={<><button type="button" className="btn-secondary" onClick={() => setAddOpen(false)}>Cancel</button><button type="submit" form="add-relationship" className="btn-primary">Save relationship</button></>}>
+        <form id="add-relationship" onSubmit={createRelationship} className="grid gap-4 sm:grid-cols-2">
+          <Field label="Resource type"><select required className="input" value={draft.resourceType} onChange={(event) => setDraft({ ...draft, resourceType: event.target.value, relation: '' })}>{resourceTypes.map((item) => <option key={item.name}>{item.name}</option>)}</select></Field>
+          <Field label="Resource ID"><input required className="input" value={draft.resourceId} onChange={(event) => setDraft({ ...draft, resourceId: event.target.value })} /></Field>
+          <Field label="Relation"><select required className="input" value={draft.relation} onChange={(event) => setDraft({ ...draft, relation: event.target.value })}><option value="">Choose relation</option>{selectedDefinition?.relations.map((item) => <option key={item.name}>{item.name}</option>)}</select></Field>
+          <Field label="Write behavior"><select className="input" value={draft.operation} onChange={(event) => setDraft({ ...draft, operation: event.target.value })}><option value="TOUCH">Touch (idempotent)</option><option value="CREATE">Create (fail if present)</option></select></Field>
+          <Field label="Subject type"><select required className="input" value={draft.subjectType} onChange={(event) => setDraft({ ...draft, subjectType: event.target.value })}><option value="">Choose type</option>{resourceTypes.map((item) => <option key={item.name}>{item.name}</option>)}</select></Field>
+          <Field label="Subject ID"><input required className="input" value={draft.subjectId} onChange={(event) => setDraft({ ...draft, subjectId: event.target.value })} /></Field>
+          <Field label="Subject relation (optional)"><input className="input" value={draft.subjectRelation} onChange={(event) => setDraft({ ...draft, subjectRelation: event.target.value })} placeholder="e.g. member" /></Field>
+          <Field label="Caveat name (optional)"><input className="input" value={draft.caveatName} onChange={(event) => setDraft({ ...draft, caveatName: event.target.value })} /></Field>
+          <div className="sm:col-span-2"><Field label="Caveat context (JSON)"><textarea className="input min-h-24 font-mono" value={draft.caveatContext} onChange={(event) => setDraft({ ...draft, caveatContext: event.target.value })} placeholder='{"key":"value"}' /></Field></div>
+          {tenantWarning && <div className="alert-warning sm:col-span-2">{tenantWarning}</div>}
+          {draft.resourceType && draft.resourceId && draft.relation && draft.subjectType && draft.subjectId && <div className="sm:col-span-2"><p className="label">Tuple preview</p><code className="block break-all rounded bg-gray-100 p-3 text-xs dark:bg-gray-900">{previewTuple(draft)}</code></div>}
+        </form>
+      </Modal>
 
-    const addRelationship = async () => {
-        setError('');
-        setSuccess('');
+      <Modal open={Boolean(deleteTarget)} title="Delete exact relationship" onClose={() => setDeleteTarget(null)} footer={<><button className="btn-secondary" type="button" onClick={() => setDeleteTarget(null)}>Cancel</button><button className="btn-danger" type="button" disabled={deleteConfirmation !== deleteTarget?.tuple} onClick={deleteRelationship}>Delete exact tuple</button></>}>
+        <p className="text-sm text-gray-600 dark:text-gray-300">This cannot be undone. Copy the complete tuple below into the confirmation field.</p>
+        <code className="my-4 block break-all rounded bg-gray-100 p-3 text-xs dark:bg-gray-900">{deleteTarget?.tuple}</code>
+        <Field label="Exact tuple confirmation"><input autoComplete="off" className="input" value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} /></Field>
+      </Modal>
+    </Layout>
+  );
+}
 
-        if (!newRelationship.resource || !newRelationship.relation || !newRelationship.subject) {
-            setError('All fields are required');
-            return;
-        }
-
-        setIsLoading(true);
-        try {
-            // Parse the input format to SpiceDB format
-            const [resourceType, resourceId] = newRelationship.resource.split(':');
-            const [subjectType, subjectId] = newRelationship.subject.split(':');
-
-            if (!resourceType || !resourceId || !subjectType || !subjectId) {
-                throw new Error('Invalid format. Use type:id format for resource and subject');
-            }
-
-            const requestBody = {
-                resource: {
-                    object_type: resourceType,
-                    object_id: resourceId
-                },
-                relation: newRelationship.relation,
-                subject: {
-                    object: {
-                        object_type: subjectType,
-                        object_id: subjectId
-                    }
-                }
-            };
-
-            const response = await fetch('/api/spicedb/relationships', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (response.ok) {
-                setSuccess('Relationship added successfully');
-                setShowAddModal(false);
-                setNewRelationship({ resource: '', relation: '', subject: '' });
-                loadRelationships(); // Reload the relationships
-            } else {
-                const errorData = await response.json();
-                setError(`Failed to add relationship: ${errorData.message}`);
-            }
-        } catch (err) {
-            setError(`Error: ${err.message}`);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const deleteRelationship = async (rel) => {
-        if (!confirm('Are you sure you want to delete this relationship?')) return;
-
-        setIsLoading(true);
-        try {
-            // This would be your actual SpiceDB API call
-            await fetch(`/api/spicedb/relationships`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    "resourceType": rel.resource.type,
-                    "resourceId": rel.resource.id,
-                    "subjectType": rel.subject.type,
-                    "subjectId": rel.subject.id,
-                })
-            });
-        } catch (err) {
-            setError('Failed to delete relationship');
-            setIsLoading(false);
-        }
-    };
-
-    return (
-        <Layout>
-            <div className="space-y-6">
-                {/* Header */}
-                <div className="flex justify-between items-center">
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-900">Relationships</h2>
-                        <p className="text-gray-600">Manage resource relationships and permissions</p>
-                    </div>
-                    <button
-                        onClick={() => setShowAddModal(true)}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                        <span className="mr-2">➕</span>
-                        Add Relationship
-                    </button>
-                </div>
-
-                {/* Alerts */}
-                {error && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                        <div className="flex items-center">
-                            <span className="text-red-600 mr-2">❌</span>
-                            <div>
-                                <h3 className="text-sm font-medium text-red-800">Error</h3>
-                                <p className="text-sm text-red-700">{error}</p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {success && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <div className="flex items-center">
-                            <span className="text-green-600 mr-2">✅</span>
-                            <div>
-                                <h3 className="text-sm font-medium text-green-800">Success</h3>
-                                <p className="text-sm text-green-700">{success}</p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Filters */}
-                <div className="bg-white shadow rounded-lg p-4">
-                    <div className="flex flex-col sm:flex-row gap-4">
-                        <div className="flex-1">
-                            <input
-                                type="text"
-                                placeholder="Search relationships..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                            />
-                        </div>
-                        <div>
-                            <select
-                                value={filterNamespace}
-                                onChange={(e) => setFilterNamespace(e.target.value)}
-                                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                            >
-                                <option value="all">All Resources</option>
-                                {resources.map(ns => (
-                                    <option key={ns} value={ns}>{ns}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <button
-                            onClick={loadRelationships}
-                            disabled={isLoading}
-                            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                        >
-                            {isLoading ? 'Loading...' : 'Refresh'}
-                        </button>
-                    </div>
-                </div>
-
-                {/* Relationships List */}
-                <div className="bg-white shadow rounded-lg overflow-hidden">
-                    <div className="px-4 py-5 sm:p-6">
-                        <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                            Relationships ({filteredRelationships.length})
-                        </h3>
-
-                        {filteredRelationships.length > 0 ? (
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Resource
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Relation
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Subject
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Created
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Actions
-                                        </th>
-                                    </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-200">
-                                    {paginatedRelationships.map((rel) => (
-                                        <tr key={rel.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="flex items-center">
-                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium mr-2">
-                              {rel.resource.type}
-                            </span>
-                                                    <span className="text-sm text-gray-900">{rel.resource.id}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
-                            {rel.relation}
-                          </span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="flex items-center">
-                            <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-medium mr-2">
-                              {rel.subject.type}
-                            </span>
-                                                    <span className="text-sm text-gray-900">
-                              {rel.subject.id}
-                                                        {rel.subject.relation && (
-                                                            <span className="text-gray-500">#{rel.subject.relation}</span>
-                                                        )}
-                            </span>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {new Date(rel.createdAt).toLocaleDateString()}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                <button
-                                                    onClick={() => deleteRelationship(rel)}
-                                                    className="text-red-600 hover:text-red-900"
-                                                >
-                                                    Delete
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    </tbody>
-                                </table>
-
-                                <div className="flex flex-col gap-4 border-t border-gray-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-                                    <div className="flex items-center gap-3 text-sm text-gray-600">
-                                        <span>
-                                            Showing {pageStart + 1}–{Math.min(pageStart + pageSize, filteredRelationships.length)} of {filteredRelationships.length}
-                                        </span>
-                                        <label className="flex items-center gap-2">
-                                            <span>Rows per page</span>
-                                            <select
-                                                value={pageSize}
-                                                onChange={(event) => setPageSize(Number(event.target.value))}
-                                                className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                            >
-                                                {PAGE_SIZE_OPTIONS.map((option) => (
-                                                    <option key={option} value={option}>{option}</option>
-                                                ))}
-                                            </select>
-                                        </label>
-                                    </div>
-
-                                    <div className="flex items-center justify-end gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                                            disabled={activePage === 1}
-                                            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                        >
-                                            Previous
-                                        </button>
-                                        <span className="px-2 text-sm text-gray-600">
-                                            Page {activePage} of {totalPages}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-                                            disabled={activePage === totalPages}
-                                            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                        >
-                                            Next
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="text-center py-8">
-                                <div className="text-gray-400 text-lg mb-2">🔗</div>
-                                <h3 className="text-lg font-medium text-gray-900 mb-2">No relationships found</h3>
-                                <p className="text-gray-500">
-                                    {searchTerm || filterNamespace !== 'all'
-                                        ? 'Try adjusting your search filters'
-                                        : 'Add your first relationship to get started'}
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Add Relationship Modal */}
-                {showAddModal && (
-                    <div className="fixed inset-0 z-50 overflow-y-auto">
-                        <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                            <div className="fixed inset-0 transition-opacity" onClick={() => setShowAddModal(false)}>
-                                <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
-                            </div>
-
-                            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-                            <div className="relative inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full z-50">
-                                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                                    <div className="sm:flex sm:items-start">
-                                        <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
-                                            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                                                Add New Relationship
-                                            </h3>
-
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                        Resource (type:id)
-                                                    </label>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="e.g., business:acme-corp"
-                                                        value={newRelationship.resource}
-                                                        onChange={(e) => setNewRelationship({...newRelationship, resource: e.target.value})}
-                                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                                    />
-                                                </div>
-
-                                                <div>
-                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                        Relation
-                                                    </label>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="e.g., owner, manager, read_access"
-                                                        value={newRelationship.relation}
-                                                        onChange={(e) => setNewRelationship({...newRelationship, relation: e.target.value})}
-                                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                                    />
-                                                </div>
-
-                                                <div>
-                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                        Subject (type:id)
-                                                    </label>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="e.g., user:alice"
-                                                        value={newRelationship.subject}
-                                                        onChange={(e) => setNewRelationship({...newRelationship, subject: e.target.value})}
-                                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                                    />
-                                                </div>
-
-                                                <div className="text-xs text-gray-500">
-                                                    <p><strong>Examples based on your schema:</strong></p>
-                                                    <p>• Resource: <code>business:acme-corp</code></p>
-                                                    <p>• Relation: <code>owner</code> or <code>manager</code> or <code>read_access</code></p>
-                                                    <p>• Subject: <code>user:alice</code></p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                                    <button
-                                        onClick={addRelationship}
-                                        disabled={isLoading}
-                                        className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
-                                    >
-                                        {isLoading ? 'Adding...' : 'Add Relationship'}
-                                    </button>
-                                    <button
-                                        onClick={() => setShowAddModal(false)}
-                                        className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                                    >
-                                        Cancel
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </Layout>
-    );
-};
-
-export default Relationships;
+function Field({ label, children }) { return <label className="block"><span className="label">{label}</span>{children}</label>; }
+function toQueryKey(key) { return key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`); }
+function relationshipFromDraft(draft) {
+  let context;
+  if (draft.caveatContext.trim()) context = JSON.parse(draft.caveatContext);
+  return {
+    resource: { objectType: draft.resourceType.trim(), objectId: draft.resourceId.trim() },
+    relation: draft.relation.trim(),
+    subject: { object: { objectType: draft.subjectType.trim(), objectId: draft.subjectId.trim() }, ...(draft.subjectRelation.trim() ? { optionalRelation: draft.subjectRelation.trim() } : {}) },
+    ...(draft.caveatName.trim() ? { optionalCaveat: { caveatName: draft.caveatName.trim(), ...(context ? { context } : {}) } } : {}),
+  };
+}
+function previewTuple(draft) { try { const relationship = relationshipFromDraft(draft); const relation = relationship.subject.optionalRelation ? `#${relationship.subject.optionalRelation}` : ''; const caveat = relationship.optionalCaveat ? ` with ${relationship.optionalCaveat.caveatName}` : ''; return `${relationship.resource.objectType}:${relationship.resource.objectId}#${relationship.relation}@${relationship.subject.object.objectType}:${relationship.subject.object.objectId}${relation}${caveat}`; } catch { return 'Caveat context is not valid JSON'; } }
+function crossTenantWarning(resourceId, subjectId, delimiter) { if (!delimiter || !resourceId.includes(delimiter) || !subjectId.includes(delimiter)) return ''; const resourceTenant = resourceId.split(delimiter)[0]; const subjectTenant = subjectId.split(delimiter)[0]; return resourceTenant !== subjectTenant ? `Possible cross-tenant relationship: ${resourceTenant} → ${subjectTenant}. Verify this is intentional.` : ''; }
+function withoutTuple({ tuple: _tuple, ...relationship }) { return relationship; }

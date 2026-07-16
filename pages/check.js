@@ -1,641 +1,112 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 
-const Check = () => {
-    const [checkForm, setCheckForm] = useState({
-        resource: '',
-        permission: '',
-        subject: '',
-        context: ''
-    });
-    const [expandForm, setExpandForm] = useState({
-        resource: '',
-        permission: '',
-        subjects: '',
-        context: ''
-    });
-    const [lookupForm, setLookupForm] = useState({
-        resource: '',
-        permission: '',
-        subjectType: '',
-        context: ''
-    });
-    const [activeTab, setActiveTab] = useState('check');
-    const [isLoading, setIsLoading] = useState(false);
-    const [result, setResult] = useState(null);
-    const [error, setError] = useState('');
-
-    const performCheck = async () => {
-        if (!checkForm.resource || !checkForm.permission || !checkForm.subject) {
-            setError('Resource, permission, and subject are required');
-            return;
-        }
-
-        setIsLoading(true);
-        setError('');
-        setResult(null);
-
-        try {
-            const [resourceType, resourceId] = checkForm.resource.split(':');
-            const [subjectType, subjectId] = checkForm.subject.split(':');
-
-            if (!resourceType || !resourceId || !subjectType || !subjectId) {
-                throw new Error('Invalid format. Use type:id format for resource and subject');
-            }
-
-            const requestBody = {
-                resource: {
-                    object_type: resourceType,
-                    object_id: resourceId
-                },
-                permission: checkForm.permission,
-                subject: {
-                    object: {
-                        object_type: subjectType,
-                        object_id: subjectId
-                    }
-                }
-            };
-
-            // Add context if provided
-            if (checkForm.context) {
-                try {
-                    requestBody.context = JSON.parse(checkForm.context);
-                } catch (e) {
-                    throw new Error('Invalid JSON in context field');
-                }
-            }
-
-            const response = await fetch('/api/spicedb/check', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Check request failed');
-            }
-
-            const data = await response.json();
-
-            setResult({
-                type: 'check',
-                permissionship: data.permissionship,
-                checked_at: data.checked_at,
-                query: `${checkForm.subject} → ${checkForm.resource}#${checkForm.permission}`,
-                duration: Date.now() - performance.now() // Approximate
-            });
-
-        } catch (err) {
-            setError(err.message || 'Failed to perform permission check');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const performExpand = async () => {
-        if (!expandForm.resource || !expandForm.permission) {
-            setError('Resource and permission are required');
-            return;
-        }
-
-        setIsLoading(true);
-        setError('');
-        setResult(null);
-
-        try {
-            const [resourceType, resourceId] = expandForm.resource.split(':');
-
-            if (!resourceType || !resourceId) {
-                throw new Error('Invalid format. Use type:id format for resource');
-            }
-
-            const requestBody = {
-                resource: {
-                    object_type: resourceType,
-                    object_id: resourceId
-                },
-                permission: expandForm.permission
-            };
-
-            // Add context if provided
-            if (expandForm.context) {
-                try {
-                    requestBody.context = JSON.parse(expandForm.context);
-                } catch (e) {
-                    throw new Error('Invalid JSON in context field');
-                }
-            }
-
-            const response = await fetch('/api/spicedb/expand', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Expand request failed');
-            }
-
-            const data = await response.json();
-
-            setResult({
-                type: 'expand',
-                tree_root: data.treeRoot,
-                query: `${expandForm.resource}#${expandForm.permission}`,
-            });
-
-        } catch (err) {
-            setError(err.message || 'Failed to expand permission');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const performLookup = async () => {
-        if (!lookupForm.resource || !lookupForm.permission || !lookupForm.subjectType) {
-            setError('Resource, permission, and subject type are required');
-            return;
-        }
-
-        setIsLoading(true);
-        setError('');
-        setResult(null);
-
-        try {
-            const [resourceType, resourceId] = lookupForm.resource.split(':');
-
-            if (!resourceType || !resourceId) {
-                throw new Error('Invalid format. Use type:id format for resource');
-            }
-
-            const requestBody = {
-                resource: {
-                    objectType: resourceType,
-                    objectId: resourceId
-                },
-                permission: lookupForm.permission,
-                subjectObjectType: lookupForm.subjectType
-            };
-
-            // Add context if provided
-            if (lookupForm.context) {
-                try {
-                    requestBody.context = JSON.parse(lookupForm.context);
-                } catch (e) {
-                    throw new Error('Invalid JSON in context field');
-                }
-            }
-
-            const response = await fetch('/api/spicedb/lookup-subjects', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Lookup request failed');
-            }
-
-            const data = await response.json();
-
-            setResult({
-                type: 'lookup',
-                subjects: data.subjects || [],
-                looked_up_at: data.looked_up_at,
-                query: `${lookupForm.resource}#${lookupForm.permission} ← ${lookupForm.subjectType}:*`,
-            });
-
-        } catch (err) {
-            setError(err.message || 'Failed to lookup subjects');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const renderExpandTree = (node, depth = 0) => {
-        if (!node) return null;
-
-        const indent = depth * 20;
-
-        return (
-            <div key={`${node.expandedObject?.objectType}-${node.expandedObject?.objectId}-${depth}`}
-                 style={{marginLeft: `${indent}px`}}
-                 className="py-1">
-
-                {/* Render the expanded object (parent node) */}
-                <div className="flex items-center space-x-2 mb-2">
-                    <span className="text-blue-600">🏢</span>
-                    <span className="font-mono text-sm font-semibold">
-                    {node.expandedObject?.objectType}:{node.expandedObject?.objectId}
-                        {node.expandedRelation && `#${node.expandedRelation}`}
-                </span>
-                </div>
-
-                {/* Render the subjects (children) */}
-                {node.leaf?.subjects && node.leaf.subjects.map((subject, index) => (
-                    <div key={`subject-${index}-${subject.object?.objectId}`}
-                         style={{marginLeft: `${indent + 20}px`}}
-                         className="py-1">
-                        <div className="flex items-center space-x-2">
-                            <span className="text-green-600">👤</span>
-                            <span className="font-mono text-sm">
-                            {subject.object?.objectType}:{subject.object?.objectId}
-                                {subject.optionalRelation && `#${subject.optionalRelation}`}
-                        </span>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        );
-    };
-
-    const getPermissionshipColor = (permissionship) => {
-        switch (permissionship) {
-            case 'PERMISSIONSHIP_HAS_PERMISSION':
-                return 'bg-green-100 text-green-800 border-green-200';
-            case 'PERMISSIONSHIP_NO_PERMISSION':
-                return 'bg-red-100 text-red-800 border-red-200';
-            case 'PERMISSIONSHIP_CONDITIONAL_PERMISSION':
-                return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-            default:
-                return 'bg-gray-100 text-gray-800 border-gray-200';
-        }
-    };
-
-    const getPermissionshipIcon = (permissionship) => {
-        switch (permissionship) {
-            case 'PERMISSIONSHIP_HAS_PERMISSION': return '✅';
-            case 'PERMISSIONSHIP_NO_PERMISSION': return '❌';
-            case 'PERMISSIONSHIP_CONDITIONAL_PERMISSION': return '⚠️';
-            default: return '❓';
-        }
-    };
-
-    return (
-        <Layout>
-            <div className="space-y-6">
-                {/* Header */}
-                <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Authorization Check</h2>
-                    <p className="text-gray-600">Perform permission checks, expand permissions, and lookup subjects</p>
-                </div>
-
-                {/* Tab Navigation */}
-                <div className="border-b border-gray-200">
-                    <nav className="-mb-px flex space-x-8">
-                        <button
-                            onClick={() => setActiveTab('check')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                                activeTab === 'check'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
-                        >
-                            Permission Check
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('expand')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                                activeTab === 'expand'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
-                        >
-                            Expand Permission
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('lookup')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                                activeTab === 'lookup'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
-                        >
-                            Lookup Subjects
-                        </button>
-                    </nav>
-                </div>
-
-                {/* Alerts */}
-                {error && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                        <div className="flex items-center">
-                            <span className="text-red-600 mr-2">❌</span>
-                            <div>
-                                <h3 className="text-sm font-medium text-red-800">Error</h3>
-                                <p className="text-sm text-red-700">{error}</p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Permission Check Tab */}
-                {activeTab === 'check' && (
-                    <div className="bg-white shadow rounded-lg">
-                        <div className="px-4 py-5 sm:p-6">
-                            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Permission Check</h3>
-
-                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Resource (type:id)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g., document:readme"
-                                        value={checkForm.resource}
-                                        onChange={(e) => setCheckForm({...checkForm, resource: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Permission
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g., view, edit, delete"
-                                        value={checkForm.permission}
-                                        onChange={(e) => setCheckForm({...checkForm, permission: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Subject (type:id)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g., user:alice"
-                                        value={checkForm.subject}
-                                        onChange={(e) => setCheckForm({...checkForm, subject: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Context (JSON, optional)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder='e.g., {"ip": "192.168.1.1"}'
-                                        value={checkForm.context}
-                                        onChange={(e) => setCheckForm({...checkForm, context: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="mt-4">
-                                <button
-                                    onClick={performCheck}
-                                    disabled={isLoading}
-                                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                                >
-                                    {isLoading ? (
-                                        <>
-                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                            Checking...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span className="mr-2">✅</span>
-                                            Check Permission
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Expand Permission Tab */}
-                {activeTab === 'expand' && (
-                    <div className="bg-white shadow rounded-lg">
-                        <div className="px-4 py-5 sm:p-6">
-                            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Expand Permission</h3>
-
-                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Resource (type:id)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g., document:readme"
-                                        value={expandForm.resource}
-                                        onChange={(e) => setExpandForm({...expandForm, resource: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Permission
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g., view, edit, delete"
-                                        value={expandForm.permission}
-                                        onChange={(e) => setExpandForm({...expandForm, permission: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-
-                                <div className="sm:col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Context (JSON, optional)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder='e.g., {"ip": "192.168.1.1"}'
-                                        value={expandForm.context}
-                                        onChange={(e) => setExpandForm({...expandForm, context: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="mt-4">
-                                <button
-                                    onClick={performExpand}
-                                    disabled={isLoading}
-                                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                                >
-                                    {isLoading ? (
-                                        <>
-                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                            Expanding...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span className="mr-2">🌳</span>
-                                            Expand Permission
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Lookup Subjects Tab */}
-                {activeTab === 'lookup' && (
-                    <div className="bg-white shadow rounded-lg">
-                        <div className="px-4 py-5 sm:p-6">
-                            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Lookup Subjects</h3>
-
-                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Resource (type:id)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g., document:readme"
-                                        value={lookupForm.resource}
-                                        onChange={(e) => setLookupForm({...lookupForm, resource: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Permission
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g., view, edit, delete"
-                                        value={lookupForm.permission}
-                                        onChange={(e) => setLookupForm({...lookupForm, permission: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Subject Type
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g., user, organization"
-                                        value={lookupForm.subjectType}
-                                        onChange={(e) => setLookupForm({...lookupForm, subjectType: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Context (JSON, optional)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder='e.g., {"ip": "192.168.1.1"}'
-                                        value={lookupForm.context}
-                                        onChange={(e) => setLookupForm({...lookupForm, context: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="mt-4">
-                                <button
-                                    onClick={performLookup}
-                                    disabled={isLoading}
-                                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50"
-                                >
-                                    {isLoading ? (
-                                        <>
-                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                            Looking up...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span className="mr-2">🔍</span>
-                                            Lookup Subjects
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Results */}
-                {result && (
-                    <div className="bg-white shadow rounded-lg">
-                        <div className="px-4 py-5 sm:p-6">
-                            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Result</h3>
-
-                            {result.type === 'check' && (
-                                <div>
-                                    <div className="flex items-center justify-between mb-4">
-                                        <code className="text-sm bg-gray-100 px-3 py-2 rounded">{result.query}</code>
-                                        <span className={`px-3 py-1 rounded text-sm font-medium border ${getPermissionshipColor(result.permissionship)}`}>
-                      {getPermissionshipIcon(result.permissionship)} {result.permissionship.replace('PERMISSIONSHIP_', '')}
-                    </span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {result.type === 'expand' && (
-                                <div>
-                                    <div className="mb-4">
-                                        <code className="text-sm bg-gray-100 px-3 py-2 rounded">{result.query}</code>
-                                    </div>
-                                    <div className="border rounded-lg p-4 bg-gray-50">
-                                        <h4 className="font-medium mb-2">Permission Tree:</h4>
-                                        {result.tree_root ? renderExpandTree(result.tree_root) : <span className="text-gray-500">No tree data</span>}
-                                    </div>
-                                </div>
-                            )}
-
-                            {result.type === 'lookup' && (
-                                <div>
-                                    <div className="mb-4">
-                                        <code className="text-sm bg-gray-100 px-3 py-2 rounded">{result.query}</code>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <h4 className="font-medium">Found Subjects ({result.subjects.length}):</h4>
-                                        {result.subjects.length > 0 ? (
-                                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                                {result.subjects.map((subject, idx) => (
-                                                    <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
-                                                        <code className="text-sm">
-                                                            {subject.subjectObjectId}
-                                                        </code>
-                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${getPermissionshipColor(subject.permissionship)}`}>
-                              {subject.permissionship.replace('PERMISSIONSHIP_', '')}
-                            </span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <p className="text-gray-500 italic">No subjects found</p>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-            </div>
-        </Layout>
-    );
-};
-
-export default Check;
+const initial = { resourceType: '', resourceId: '', permission: '', subjectType: '', subjectId: '', subjectRelation: '', context: '', consistency: 'minimize' };
+
+export default function AuthorizationWorkbench() {
+  const [definitions, setDefinitions] = useState([]);
+  const [form, setForm] = useState(initial);
+  const [tab, setTab] = useState('check');
+  const [bulkSubjects, setBulkSubjects] = useState('');
+  const [result, setResult] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetch('/api/spicedb/resources').then(async (response) => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message);
+      setDefinitions(data.resourceTypes || []);
+      const first = data.resourceTypes?.[0];
+      setForm((current) => ({ ...current, resourceType: first?.name || '', permission: first?.permissions?.[0]?.name || '' }));
+    }).catch((failure) => setError(failure.message || 'Unable to load schema suggestions'));
+  }, []);
+
+  const definition = useMemo(() => definitions.find((item) => item.name === form.resourceType), [definitions, form.resourceType]);
+  const updateType = (resourceType) => {
+    const selected = definitions.find((item) => item.name === resourceType);
+    setForm({ ...form, resourceType, permission: selected?.permissions?.[0]?.name || '' });
+  };
+
+  const execute = async () => {
+    setLoading(true); setError(''); setResult(null);
+    const started = performance.now();
+    try {
+      const context = parseContext(form.context);
+      const common = {
+        resource: objectRef(form.resourceType, form.resourceId), permission: form.permission,
+        ...(context ? { context } : {}), consistency: consistency(form.consistency),
+      };
+      let endpoint; let body;
+      if (tab === 'check') {
+        endpoint = '/api/spicedb/check';
+        body = { ...common, subject: subjectRef(form.subjectType, form.subjectId, form.subjectRelation) };
+      } else if (tab === 'bulk') {
+        endpoint = '/api/spicedb/check-bulk';
+        const subjects = bulkSubjects.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+        if (subjects.length > 50) throw new Error('Bulk checks are limited to 50 subjects');
+        body = { requests: subjects.map((value) => ({ ...common, subject: parseSubject(value) })) };
+      } else if (tab === 'expand') {
+        endpoint = '/api/spicedb/expand'; body = common;
+      } else {
+        endpoint = '/api/spicedb/lookup-subjects'; body = { ...common, subjectObjectType: form.subjectType };
+      }
+      validate(tab, form, bulkSubjects);
+      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Authorization request failed');
+      const completed = { type: tab, data, durationMs: Math.round((performance.now() - started) * 10) / 10, at: new Date().toISOString(), query: queryLabel(tab, form, bulkSubjects) };
+      setResult(completed); setHistory((items) => [completed, ...items].slice(0, 20));
+    } catch (failure) { setError(failure.message || 'Authorization request failed'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <Layout>
+      <div className="space-y-6">
+        <section><h2 className="text-2xl font-bold">Authorization workbench</h2><p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Every result below comes from the configured SpiceDB instance.</p></section>
+        {error && <div role="alert" className="alert-error">{error}</div>}
+        <div className="border-b border-gray-200 dark:border-gray-700" role="tablist" aria-label="Authorization operations"><div className="flex gap-5 overflow-x-auto">{[['check','Check'],['bulk','Bulk check'],['expand','Expand'],['lookup','Lookup subjects']].map(([value,label]) => <button type="button" role="tab" aria-selected={tab === value} onClick={() => { setTab(value); setResult(null); setError(''); }} key={value} className={`whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium ${tab === value ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'}`}>{label}</button>)}</div></div>
+
+        <section className="card p-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="Resource type"><select className="input" value={form.resourceType} onChange={(event) => updateType(event.target.value)}>{definitions.map((item) => <option key={item.name}>{item.name}</option>)}</select></Field>
+            <Field label="Resource ID"><input className="input" value={form.resourceId} onChange={(event) => setForm({ ...form, resourceId: event.target.value })} placeholder="Exact object ID" /></Field>
+            <Field label="Permission"><select className="input" value={form.permission} onChange={(event) => setForm({ ...form, permission: event.target.value })}><option value="">Choose permission</option>{definition?.permissions.map((item) => <option key={item.name}>{item.name}</option>)}</select></Field>
+            {tab !== 'expand' && <Field label={tab === 'lookup' ? 'Subject type' : 'Subject type'}><select className="input" value={form.subjectType} onChange={(event) => setForm({ ...form, subjectType: event.target.value })}><option value="">Choose type</option>{definitions.map((item) => <option key={item.name}>{item.name}</option>)}</select></Field>}
+            {tab === 'check' && <><Field label="Subject ID"><input className="input" value={form.subjectId} onChange={(event) => setForm({ ...form, subjectId: event.target.value })} /></Field><Field label="Subject relation (optional)"><input className="input" value={form.subjectRelation} onChange={(event) => setForm({ ...form, subjectRelation: event.target.value })} placeholder="e.g. member" /></Field></>}
+            {tab === 'bulk' && <div className="sm:col-span-2 lg:col-span-3"><Field label="Subjects — one type:id or type:id#relation per line (maximum 50)"><textarea className="input min-h-32 font-mono" value={bulkSubjects} onChange={(event) => setBulkSubjects(event.target.value)} placeholder={'user:alice\nuser:bob\ngroup:admins#member'} /></Field></div>}
+            <Field label="Consistency"><select className="input" value={form.consistency} onChange={(event) => setForm({ ...form, consistency: event.target.value })}><option value="minimize">Minimize latency</option><option value="full">Fully consistent</option></select></Field>
+            <div className="sm:col-span-2"><Field label="Caveat context (JSON object, optional)"><textarea className="input min-h-24 font-mono" value={form.context} onChange={(event) => setForm({ ...form, context: event.target.value })} placeholder='{"current_time":"2026-07-16T12:00:00Z"}' /></Field></div>
+          </div>
+          <div className="mt-5 flex items-center gap-3"><button className="btn-primary" type="button" disabled={loading} onClick={execute}>{loading ? 'Running…' : operationLabel(tab)}</button><span className="text-xs text-gray-500">Results are not cached.</span></div>
+        </section>
+
+        {result && <ResultCard result={result} />}
+
+        <section className="card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700"><h2 className="font-semibold">Session history</h2>{history.length > 0 && <button className="text-sm text-gray-500 hover:text-gray-900 dark:hover:text-white" type="button" onClick={() => setHistory([])}>Clear</button>}</div>
+          {!history.length ? <div className="p-8 text-center text-gray-500">No authorization requests in this browser session.</div> : <ul className="divide-y divide-gray-200 dark:divide-gray-700">{history.map((item, index) => <li key={`${item.at}-${index}`} className="flex flex-col justify-between gap-2 px-5 py-3 sm:flex-row"><div><code className="break-all text-sm">{item.query}</code><p className="mt-1 text-xs text-gray-500">{new Date(item.at).toLocaleTimeString()}</p></div><span className="text-sm text-gray-500">{item.durationMs} ms</span></li>)}</ul>}
+        </section>
+      </div>
+    </Layout>
+  );
+}
+
+function ResultCard({ result }) {
+  const permissionship = result.type === 'check' ? result.data.permissionship : null;
+  const missing = result.data.partialCaveatInfo?.missingRequiredContext || [];
+  return <section className="card overflow-hidden" aria-live="polite"><header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-4 dark:border-gray-700"><div><h2 className="font-semibold">Live result</h2><code className="text-xs text-gray-500">{result.query}</code></div><div className="flex items-center gap-2">{permissionship && <span className={`rounded-full px-3 py-1 text-sm font-semibold ${permissionColor(permissionship)}`}>{permissionLabel(permissionship)}</span>}<span className="text-sm text-gray-500">{result.durationMs} ms</span><button className="btn-small" type="button" onClick={() => navigator.clipboard.writeText(JSON.stringify(result.data, null, 2))}>Copy JSON</button></div></header>{missing.length > 0 && <div className="alert-warning m-5">Conditional result. Missing caveat context: {missing.join(', ')}</div>}<pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap p-5 text-xs">{JSON.stringify(result.data, null, 2)}</pre></section>;
+}
+function Field({ label, children }) { return <label className="block"><span className="label">{label}</span>{children}</label>; }
+function objectRef(objectType, objectId) { return { objectType: objectType.trim(), objectId: objectId.trim() }; }
+function subjectRef(type, id, relation) { return { object: objectRef(type, id), ...(relation.trim() ? { optionalRelation: relation.trim() } : {}) }; }
+function parseSubject(value) { const colon = value.indexOf(':'); if (colon < 1) throw new Error(`Invalid subject: ${value}`); const type = value.slice(0, colon); const remainder = value.slice(colon + 1); const hash = remainder.lastIndexOf('#'); return subjectRef(type, hash > 0 ? remainder.slice(0, hash) : remainder, hash > 0 ? remainder.slice(hash + 1) : ''); }
+function parseContext(value) { if (!value.trim()) return null; const parsed = JSON.parse(value); if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error('Caveat context must be a JSON object'); return parsed; }
+function consistency(value) { return value === 'full' ? { fullyConsistent: true } : { minimizeLatency: true }; }
+function validate(tab, form, bulk) { if (!form.resourceType || !form.resourceId || !form.permission) throw new Error('Resource type, resource ID and permission are required'); if (tab === 'check' && (!form.subjectType || !form.subjectId)) throw new Error('Subject type and subject ID are required'); if (tab === 'lookup' && !form.subjectType) throw new Error('Subject type is required'); if (tab === 'bulk' && !bulk.trim()) throw new Error('Enter at least one subject'); }
+function operationLabel(tab) { return ({ check: 'Check permission', bulk: 'Run real bulk checks', expand: 'Expand permission', lookup: 'Lookup subjects' })[tab]; }
+function queryLabel(tab, form, bulk) { if (tab === 'check') return `${form.subjectType}:${form.subjectId}${form.subjectRelation ? `#${form.subjectRelation}` : ''} → ${form.resourceType}:${form.resourceId}#${form.permission}`; if (tab === 'bulk') return `${bulk.split(/\r?\n/).filter(Boolean).length} subjects → ${form.resourceType}:${form.resourceId}#${form.permission}`; return `${form.resourceType}:${form.resourceId}#${form.permission}${tab === 'lookup' ? ` ← ${form.subjectType}:*` : ''}`; }
+function permissionLabel(value) { return ({ PERMISSIONSHIP_HAS_PERMISSION: 'Allowed', PERMISSIONSHIP_NO_PERMISSION: 'Denied', PERMISSIONSHIP_CONDITIONAL_PERMISSION: 'Conditional' })[value] || value; }
+function permissionColor(value) { if (value === 'PERMISSIONSHIP_HAS_PERMISSION') return 'bg-green-100 text-green-800'; if (value === 'PERMISSIONSHIP_NO_PERMISSION') return 'bg-red-100 text-red-800'; return 'bg-amber-100 text-amber-800'; }

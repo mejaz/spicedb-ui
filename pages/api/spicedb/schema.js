@@ -1,82 +1,54 @@
+import { parseSchema, validateSchemaText } from '../../../lib/schema';
+import { enforceRateLimit } from '../../../lib/rate-limit';
+import { assertMutationAllowed, auditMutation, sha256 } from '../../../lib/security';
+import { publicError, readSchema, spiceDBJson } from '../../../lib/spicedb';
+
 export default async function handler(req, res) {
-    const spicedbUrl = process.env.SPICEDB_URL || 'http://localhost:8080';
-    const token = process.env.SPICEDB_TOKEN || 'somerandomkeyhere';
+  res.setHeader('Cache-Control', 'no-store');
+  if (req.method === 'GET') return read(req, res);
+  if (req.method === 'PUT') return write(req, res);
+  res.setHeader('Allow', 'GET, PUT');
+  return res.status(405).json({ message: 'Method not allowed' });
+}
 
-    if (req.method === 'GET') {
-        try {
-            const response = await fetch(`${spicedbUrl}/v1/schema/read`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                }
-            });
+async function read(_req, res) {
+  try {
+    const schema = await readSchema();
+    return res.status(200).json({ schema, hash: sha256(schema), definitions: parseSchema(schema) });
+  } catch (error) {
+    const failure = publicError(error);
+    return res.status(failure.status).json({ message: failure.message });
+  }
+}
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('SpiceDB schema read error:', response.status, errorText);
-                return res.status(response.status).json({
-                    message: `SpiceDB error: ${errorText}`
-                });
-            }
+async function write(req, res) {
+  if (!enforceRateLimit(req, res, { name: 'schema-write', limit: 5, windowMs: 60000 })) return;
+  const denied = assertMutationAllowed(req, 'schema');
+  if (denied) return res.status(denied.status).json({ message: denied.message });
 
-            const data = await response.json();
-            // Return the schema text
-            res.status(200).send(data.schemaText || '');
+  const { schema, expectedHash, confirmation } = req.body || {};
+  if (confirmation !== 'WRITE SCHEMA') {
+    return res.status(400).json({ message: 'Schema write confirmation is required' });
+  }
 
-        } catch (error) {
-            console.error('Schema read API error:', error);
-            res.status(500).json({
-                message: 'Internal server error',
-                error: error.message
-            });
-        }
+  const errors = validateSchemaText(schema);
+  if (errors.length) return res.status(400).json({ message: 'Schema validation failed', errors });
+
+  try {
+    const current = await readSchema();
+    if (!expectedHash || expectedHash !== sha256(current)) {
+      return res.status(409).json({ message: 'The live schema changed after you loaded it. Reload and review the diff.' });
     }
-    else if (req.method === 'POST') {
-        try {
-            // Get the raw body as text
-            let schemaText = '';
 
-            if (typeof req.body === 'string') {
-                schemaText = req.body;
-            } else if (req.body && typeof req.body === 'object') {
-                // If it's already parsed as JSON, convert back to string
-                schemaText = JSON.stringify(req.body);
-            }
-
-            console.log('Writing schema:', schemaText);
-
-            const response = await fetch(`${spicedbUrl}/v1/schema/write`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                    schema: schemaText
-                })
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('SpiceDB schema write error:', response.status, errorText);
-                return res.status(response.status).json({
-                    message: `SpiceDB error: ${errorText}`
-                });
-            }
-
-            const data = await response.json();
-            res.status(200).json(data);
-
-        } catch (error) {
-            console.error('Schema write API error:', error);
-            res.status(500).json({
-                message: 'Internal server error',
-                error: error.message
-            });
-        }
-    }
-    else {
-        res.status(405).json({ message: 'Method not allowed' });
-    }
+    const data = await spiceDBJson('/v1/schema/write', { body: { schema } });
+    auditMutation(req, 'schema.write', {
+      previousHash: expectedHash,
+      newHash: sha256(schema),
+      definitionCount: parseSchema(schema).length,
+    });
+    return res.status(200).json({ ...data, hash: sha256(schema) });
+  } catch (error) {
+    const failure = publicError(error);
+    return res.status(failure.status).json({ message: failure.message });
+  }
 }

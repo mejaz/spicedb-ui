@@ -1,5 +1,8 @@
-node_modules
+.git
+.idea
 .next
-Dockerfile
-.dockerignore
-*.log
+node_modules
+npm-debug.log*
+snaps
+.env*
+!.env.example
