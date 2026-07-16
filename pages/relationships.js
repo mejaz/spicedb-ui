@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
 const Relationships = () => {
     const [resources, setResources] = useState([]);
     const [relationships, setRelationships] = useState([]);
@@ -9,6 +11,8 @@ const Relationships = () => {
     const [showAddModal, setShowAddModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterNamespace, setFilterNamespace] = useState('all');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
     const [newRelationship, setNewRelationship] = useState({
         resource: '',
         relation: '',
@@ -25,6 +29,21 @@ const Relationships = () => {
     useEffect(() => {
         filterRelationships();
     }, [relationships, searchTerm, filterNamespace]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredRelationships.length / pageSize));
+    const activePage = Math.min(currentPage, totalPages);
+    const pageStart = (activePage - 1) * pageSize;
+    const paginatedRelationships = filteredRelationships.slice(pageStart, pageStart + pageSize);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, filterNamespace, pageSize]);
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
 
     const loadResources = async () => {
         setIsLoading(true);
@@ -270,7 +289,7 @@ const Relationships = () => {
                                     </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
-                                    {filteredRelationships.map((rel) => (
+                                    {paginatedRelationships.map((rel) => (
                                         <tr key={rel.id} className="hover:bg-gray-50">
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center">
@@ -313,6 +332,48 @@ const Relationships = () => {
                                     ))}
                                     </tbody>
                                 </table>
+
+                                <div className="flex flex-col gap-4 border-t border-gray-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex items-center gap-3 text-sm text-gray-600">
+                                        <span>
+                                            Showing {pageStart + 1}–{Math.min(pageStart + pageSize, filteredRelationships.length)} of {filteredRelationships.length}
+                                        </span>
+                                        <label className="flex items-center gap-2">
+                                            <span>Rows per page</span>
+                                            <select
+                                                value={pageSize}
+                                                onChange={(event) => setPageSize(Number(event.target.value))}
+                                                className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-blue-500"
+                                            >
+                                                {PAGE_SIZE_OPTIONS.map((option) => (
+                                                    <option key={option} value={option}>{option}</option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                    </div>
+
+                                    <div className="flex items-center justify-end gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                                            disabled={activePage === 1}
+                                            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="px-2 text-sm text-gray-600">
+                                            Page {activePage} of {totalPages}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                                            disabled={activePage === totalPages}
+                                            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         ) : (
                             <div className="text-center py-8">
